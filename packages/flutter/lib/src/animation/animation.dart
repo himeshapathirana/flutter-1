@@ -142,7 +142,7 @@ typedef ValueListenableTransformer<T> = T Function(T);
 ///    other kinds of [Animation]s.
 ///  * [AnimatedWidget] and its subclasses, which provide animation effects
 ///    that can be controlled by an [Animation].
-abstract class Animation<T> extends Listenable implements ValueListenable<T> {
+abstract class Animation<T> implements ValueListenable<T> {
   /// Abstract const constructor. This constructor enables subclasses to provide
   /// const constructors so that they can be used in const expressions.
   const Animation();
