@@ -33,8 +33,8 @@ import 'scaffold.dart' show Scaffold, ScaffoldMessenger;
 /// Does nothing if asserts are disabled. Always returns true.
 bool debugCheckHasMaterial(BuildContext context) {
   assert(() {
-    if (LookupBoundary.findAncestorWidgetOfExactType<Material>(context) == null) {
-      final bool hiddenByBoundary = LookupBoundary.debugIsHidingAncestorWidgetOfExactType<Material>(context);
+    if (LookupBoundary.findAncestorRenderObjectOfType<MaterialInkController>(context) == null) {
+      final bool hiddenByBoundary = LookupBoundary.debugIsHidingAncestorRenderObjectOfType<MaterialInkController>(context);
       throw FlutterError.fromParts(<DiagnosticsNode>[
         ErrorSummary('No Material widget found${hiddenByBoundary ? ' within the closest LookupBoundary' : ''}.'),
         if (hiddenByBoundary)

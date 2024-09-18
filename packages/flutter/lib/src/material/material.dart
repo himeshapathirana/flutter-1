@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// ignore_for_file: public_member_api_docs
+
 /// @docImport 'card.dart';
 /// @docImport 'color_scheme.dart';
 /// @docImport 'colors.dart';
@@ -82,7 +84,7 @@ const Map<MaterialType, BorderRadius?> kMaterialEdges = <MaterialType, BorderRad
 /// An interface for creating [InkSplash]s and [InkHighlight]s on a [Material].
 ///
 /// Typically obtained via [Material.of].
-abstract class MaterialInkController {
+abstract class MaterialInkController implements RenderObject {
   /// The color of the material.
   Color? get color;
 
@@ -96,9 +98,39 @@ abstract class MaterialInkController {
   ///
   /// The ink feature will paint as part of this controller.
   void addInkFeature(InkFeature feature);
+}
 
-  /// Notifies the controller that one of its ink features needs to repaint.
-  void markNeedsPaint();
+class SplashBox extends StatefulWidget {
+  const SplashBox({super.key, this.color, this.child});
+
+  final Color? color;
+
+  final Widget? child;
+
+  @override
+  State<StatefulWidget> createState() => _SplashBoxState();
+}
+
+class _SplashBoxState extends State<SplashBox> with TickerProviderStateMixin {
+  final GlobalKey _renderer = GlobalKey();
+  @override
+  Widget build(BuildContext context) {
+    final Color? color = widget.color;
+    return NotificationListener<LayoutChangedNotification>(
+      onNotification: (LayoutChangedNotification notification) {
+        final _RenderInkFeatures renderer = _renderer.currentContext!.findRenderObject()! as _RenderInkFeatures;
+        renderer._didChangeLayout();
+        return false;
+      },
+      child: _InkFeatures(
+        key: _renderer,
+        absorbHitTest: color != null,
+        color: color,
+        vsync: this,
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 /// A piece of material.
