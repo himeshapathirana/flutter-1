@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// ignore_for_file: public_member_api_docs
+
 /// @docImport 'dart:ui';
 ///
 /// @docImport 'package:flutter/animation.dart';
@@ -1925,6 +1927,10 @@ abstract class RenderObjectWidget extends Widget {
   /// returned by this object's [createRenderObject].
   @protected
   void didUnmountRenderObject(covariant RenderObject renderObject) { }
+}
+
+mixin RenderListenable on RenderObjectWidget {
+  abstract final Listenable listenable;
 }
 
 /// A superclass for [RenderObjectWidget]s that configure [RenderObject] subclasses
@@ -6597,7 +6603,8 @@ abstract class RenderObjectElement extends Element {
       _debugDoingBuild = true;
       return true;
     }());
-    _renderObject = (widget as RenderObjectWidget).createRenderObject(this);
+    final RenderObjectWidget widget = this.widget as RenderObjectWidget;
+    _renderObject = widget.createRenderObject(this);
     assert(!_renderObject!.debugDisposed!);
     assert(() {
       _debugDoingBuild = false;
@@ -6608,6 +6615,9 @@ abstract class RenderObjectElement extends Element {
       return true;
     }());
     assert(slot == newSlot);
+    if (widget is RenderListenable) {
+      widget.listenable.addListener(_performRebuild);
+    }
     attachRenderObject(newSlot);
     super.performRebuild(); // clears the "dirty" flag
   }
@@ -6669,6 +6679,9 @@ abstract class RenderObjectElement extends Element {
       '$renderObject',
     );
     final RenderObjectWidget oldWidget = widget as RenderObjectWidget;
+    if (oldWidget is RenderListenable) {
+      oldWidget.listenable.removeListener(_performRebuild);
+    }
     super.unmount();
     assert(
       !renderObject.attached,
