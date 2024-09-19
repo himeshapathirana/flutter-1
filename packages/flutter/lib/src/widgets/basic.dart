@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// ignore_for_file: public_member_api_docs
+
 /// @docImport 'dart:ui';
 /// @docImport 'package:flutter/cupertino.dart';
 /// @docImport 'package:flutter/material.dart';
@@ -7813,12 +7815,12 @@ class ColoredBox extends SingleChildRenderObjectWidget {
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return _RenderColoredBox(color: color);
+    return RenderColoredBox(color: color);
   }
 
   @override
-  void updateRenderObject(BuildContext context, RenderObject renderObject) {
-    (renderObject as _RenderColoredBox).color = color;
+  void updateRenderObject(BuildContext context, RenderColoredBox renderObject) {
+    renderObject.color = color;
   }
 
   @override
@@ -7828,8 +7830,8 @@ class ColoredBox extends SingleChildRenderObjectWidget {
   }
 }
 
-class _RenderColoredBox extends RenderProxyBoxWithHitTestBehavior {
-  _RenderColoredBox({ required Color color })
+class RenderColoredBox extends RenderProxyBoxWithHitTestBehavior {
+  RenderColoredBox({ required Color color })
     : _color = color,
       super(behavior: HitTestBehavior.opaque);
 
