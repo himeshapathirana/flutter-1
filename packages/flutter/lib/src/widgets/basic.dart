@@ -2885,6 +2885,16 @@ class FractionallySizedBox extends SingleChildRenderObjectWidget {
   }) : assert(widthFactor == null || widthFactor >= 0.0),
        assert(heightFactor == null || heightFactor >= 0.0);
 
+  /// Analagous to [SizedBox.square].
+  const FractionallySizedBox.scaled({
+    super.key,
+    this.alignment = Alignment.center,
+    double? scale,
+    super.child,
+  }) : assert(scale == null || scale >= 0.0),
+       widthFactor = scale,
+       heightFactor = scale;
+
   /// {@template flutter.widgets.basic.fractionallySizedBox.widthFactor}
   /// If non-null, the fraction of the incoming width given to the child.
   ///
