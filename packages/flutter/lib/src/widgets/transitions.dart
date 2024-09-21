@@ -265,18 +265,18 @@ typedef TransformCallback = Matrix4 Function(double animationValue);
 ///    matrix which scales along the X and Y axis.
 ///  * [RotationTransition], which animates the rotation of a widget, by
 ///    providing a matrix which rotates along the Z axis.
-class MatrixTransition extends AnimatedWidget {
+class MatrixTransition extends SingleChildRenderObjectWidget with RenderListenable {
   /// Creates a matrix transition.
   ///
   /// The [alignment] argument defaults to [Alignment.center].
   const MatrixTransition({
     super.key,
-    required Animation<double> animation,
+    required this.animation,
     required this.onTransform,
     this.alignment = Alignment.center,
     this.filterQuality,
-    this.child,
-  }) : super(listenable: animation);
+    super.child,
+  });
 
   /// The callback to compute a [Matrix4] from the [animation]. It's called
   /// every time [animation] changes its value.
@@ -286,7 +286,10 @@ class MatrixTransition extends AnimatedWidget {
   ///
   /// The matrix will be computed from the animation with the [onTransform]
   /// callback.
-  Animation<double> get animation => listenable as Animation<double>;
+  final Animation<double> animation;
+
+  @override
+  Listenable get listenable => animation;
 
   /// The alignment of the origin of the coordinate system in which the
   /// transform takes place, relative to the size of the box.
@@ -303,23 +306,21 @@ class MatrixTransition extends AnimatedWidget {
   /// {@macro flutter.widgets.Transform.optional.FilterQuality}
   final FilterQuality? filterQuality;
 
-  /// The widget below this widget in the tree.
-  ///
-  /// {@macro flutter.widgets.ProxyWidget.child}
-  final Widget? child;
-
   @override
-  Widget build(BuildContext context) {
-    // The ImageFilter layer created by setting filterQuality will introduce
-    // a saveLayer call. This is usually worthwhile when animating the layer,
-    // but leaving it in the layer tree before the animation has started or after
-    // it has finished significantly hurts performance.
-    return Transform(
+  RenderObject createRenderObject(BuildContext context) {
+    return RenderTransform(
       transform: onTransform(animation.value),
       alignment: alignment,
       filterQuality: animation.isAnimating ? filterQuality : null,
-      child: child,
     );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderTransform renderObject) {
+    renderObject
+      ..transform = onTransform(animation.value)
+      ..alignment = alignment
+      ..filterQuality = animation.isAnimating ? filterQuality : null;
   }
 }
 
