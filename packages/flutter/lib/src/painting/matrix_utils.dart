@@ -505,6 +505,29 @@ abstract final class MatrixUtils {
       ..setRow(0, Vector4(0, 0, 0, offset.dx))
       ..setRow(1, Vector4(0, 0, 0, offset.dy));
   }
+
+  // ignore: public_member_api_docs
+  static Matrix4? lerp(Matrix4? a, Matrix4? b, double t) {
+    if (a == null && b == null || a == null && t == 0 || b == null && t == 1) {
+      return null;
+    }
+    if (a == null || b == null) {
+      return lerp(a ?? Matrix4.identity(), b ?? Matrix4.identity(), t);
+    }
+    final Vector3 beginTranslation = Vector3.zero();
+    final Vector3 endTranslation = Vector3.zero();
+    final Quaternion beginRotation = Quaternion.identity();
+    final Quaternion endRotation = Quaternion.identity();
+    final Vector3 beginScale = Vector3.zero();
+    final Vector3 endScale = Vector3.zero();
+    a.decompose(beginTranslation, beginRotation, beginScale);
+    b.decompose(endTranslation, endRotation, endScale);
+    final Vector3 lerpTranslation = beginTranslation * (1.0 - t) + endTranslation * t;
+    // TODO(alangardner): Implement lerp for constant rotation
+    final Quaternion lerpRotation = (beginRotation.scaled(1.0 - t) + endRotation.scaled(t)).normalized();
+    final Vector3 lerpScale = beginScale * (1.0 - t) + endScale * t;
+    return Matrix4.compose(lerpTranslation, lerpRotation, lerpScale);
+  }
 }
 
 /// Returns a list of strings representing the given transform in a format

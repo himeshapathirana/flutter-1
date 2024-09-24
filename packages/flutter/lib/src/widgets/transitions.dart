@@ -184,22 +184,28 @@ typedef DelegatedTransitionBuilder = Widget? Function(BuildContext context, Anim
 ///    position to an end position over the lifetime of the animation.
 ///  * [RelativePositionedTransition], a widget that transitions its child's
 ///    position based on the value of a rectangle relative to a bounding box.
-class SlideTransition extends AnimatedWidget {
+class SlideTransition extends SingleChildRenderObjectWidget with RenderListenable {
   /// Creates a fractional translation transition.
   const SlideTransition({
     super.key,
-    required Animation<Offset> position,
+    required this.position,
     this.transformHitTests = true,
+    @Deprecated(
+      'SlideTransition inherits the ambient directionality from the BuildContext.'
+    )
     this.textDirection,
-    this.child,
-  }) : super(listenable: position);
+    super.child,
+  });
 
   /// The animation that controls the position of the child.
   ///
   /// If the current value of the position animation is `(dx, dy)`, the child
   /// will be translated horizontally by `width * dx` and vertically by
   /// `height * dy`, after applying the [textDirection] if available.
-  Animation<Offset> get position => listenable as Animation<Offset>;
+  final Animation<Offset> position;
+
+  @override
+  Listenable get listenable => position;
 
   /// The direction to use for the x offset described by the [position].
   ///
@@ -212,6 +218,9 @@ class SlideTransition extends AnimatedWidget {
   ///
   /// If [textDirection] is [TextDirection.ltr], the x offset is applied in the
   /// reading direction such that x offsets move the child towards the right.
+  @Deprecated(
+    'SlideTransition inherits the ambient directionality from the BuildContext.'
+  )
   final TextDirection? textDirection;
 
   /// Whether hit testing should be affected by the slide animation.
@@ -222,22 +231,27 @@ class SlideTransition extends AnimatedWidget {
   /// location and you want the user to benefit from "muscle memory".
   final bool transformHitTests;
 
-  /// The widget below this widget in the tree.
-  ///
-  /// {@macro flutter.widgets.ProxyWidget.child}
-  final Widget? child;
+  @override
+  RenderFractionalTranslation createRenderObject(BuildContext context) {
+    Offset translation = position.value;
+    if ((textDirection ?? Directionality.maybeOf(context)) == TextDirection.rtl) {
+      translation = Offset(-translation.dx, translation.dy);
+    }
+    return RenderFractionalTranslation(
+      translation: translation,
+      transformHitTests: transformHitTests,
+    );
+  }
 
   @override
-  Widget build(BuildContext context) {
-    Offset offset = position.value;
-    if (textDirection == TextDirection.rtl) {
-      offset = Offset(-offset.dx, offset.dy);
+  void updateRenderObject(BuildContext context, RenderFractionalTranslation renderObject) {
+    Offset translation = position.value;
+    if ((textDirection ?? Directionality.maybeOf(context)) == TextDirection.rtl) {
+      translation = Offset(-translation.dx, translation.dy);
     }
-    return FractionalTranslation(
-      translation: offset,
-      transformHitTests: transformHitTests,
-      child: child,
-    );
+    renderObject
+      ..translation = translation
+      ..transformHitTests = transformHitTests;
   }
 }
 

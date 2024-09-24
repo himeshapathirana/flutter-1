@@ -567,17 +567,53 @@ class _MaterialState extends State<Material> with TickerProviderStateMixin {
       );
     }
 
-    return _MaterialInterior(
-      curve: Curves.fastOutSlowIn,
+    return AnimatedValue<_MaterialProperties>.builder(
+      (
+        shape: shape,
+        elevation: widget.elevation,
+        shadowColor: modelShadowColor,
+        surfaceTintColor: widget.surfaceTintColor,
+      ),
       duration: widget.animationDuration,
-      shape: shape,
-      borderOnForeground: widget.borderOnForeground,
-      clipBehavior: widget.clipBehavior,
-      elevation: widget.elevation,
-      color: backgroundColor!,
-      shadowColor: modelShadowColor,
-      surfaceTintColor: widget.surfaceTintColor,
-      child: contents,
+      lerp: _lerp,
+      builder: (BuildContext context, _MaterialProperties value, Widget? child) {
+        final (
+          :double elevation,
+          :Color? surfaceTintColor,
+          :Color shadowColor,
+          :ShapeBorder shape,
+        ) = value;
+        return PhysicalShape(
+          clipper: ShapeBorderClipper(
+            shape: shape,
+            textDirection: Directionality.maybeOf(context),
+          ),
+          clipBehavior: widget.clipBehavior,
+          elevation: elevation,
+          color: theme.useMaterial3
+              ? ElevationOverlay.applySurfaceTint(backgroundColor!, surfaceTintColor, elevation)
+              : ElevationOverlay.applyOverlay(context, backgroundColor!, elevation),
+          shadowColor: shadowColor,
+          child: _ShapeBorderPaint(
+            shape: shape,
+            borderOnForeground: widget.borderOnForeground,
+            child: contents!,
+          ),
+        );
+      },
+    );
+  }
+
+  static _MaterialProperties _lerp(
+    _MaterialProperties a,
+    _MaterialProperties b,
+    double t,
+  ) {
+    return (
+      elevation: lerpDouble(a.elevation, b.elevation, t)!,
+      surfaceTintColor: Color.lerp(a.surfaceTintColor, b.surfaceTintColor, t),
+      shadowColor: Color.lerp(a.shadowColor, b.shadowColor, t)!,
+      shape: ShapeBorder.lerp(a.shape, b.shape, t)!,
     );
   }
 }
@@ -841,101 +877,12 @@ class ShapeBorderTween extends Tween<ShapeBorder?> {
   }
 }
 
-typedef _MaterialInteriorProperties = ({
+typedef _MaterialProperties = ({
   double elevation,
   Color? surfaceTintColor,
   Color shadowColor,
   ShapeBorder shape,
 });
-
-// The interior of non-transparent material.
-//
-// Animates [elevation], [shadowColor], and [shape].
-class _MaterialInterior extends AnimatedValue<_MaterialInteriorProperties> {
-  /// Creates a const instance of [_MaterialInterior].
-  ///
-  /// The [elevation] must be specified and greater than or equal to zero.
-  const _MaterialInterior({
-    this.borderOnForeground = true,
-    this.clipBehavior = Clip.none,
-    required this.color,
-    required ShapeBorder shape,
-    required double elevation,
-    required Color shadowColor,
-    Color? surfaceTintColor,
-    required super.duration,
-    super.curve,
-    required Widget super.child,
-  }) : assert(elevation >= 0.0),
-       super(
-         value: (elevation: elevation, surfaceTintColor: surfaceTintColor, shadowColor: shadowColor, shape: shape),
-         lerp: _lerpProperties,
-       );
-
-  static _MaterialInteriorProperties _lerpProperties(
-    _MaterialInteriorProperties a,
-    _MaterialInteriorProperties b,
-    double t,
-  ) {
-    return (
-      elevation: lerpDouble(a.elevation, b.elevation, t)!,
-      surfaceTintColor: Color.lerp(a.surfaceTintColor, b.surfaceTintColor, t),
-      shadowColor: Color.lerp(a.shadowColor, b.shadowColor, t)!,
-      shape: ShapeBorder.lerp(a.shape, b.shape, t)!,
-    );
-  }
-
-  /// Whether to paint the border in front of the child.
-  ///
-  /// The default value is true.
-  /// If false, the border will be painted behind the child.
-  final bool borderOnForeground;
-
-  /// {@macro flutter.material.Material.clipBehavior}
-  ///
-  /// Defaults to [Clip.none].
-  final Clip clipBehavior;
-
-  /// The target background color.
-  final Color color;
-
-  @override
-  Widget build(BuildContext context, _MaterialInteriorProperties value) {
-    final (
-      :double elevation,
-      :Color? surfaceTintColor,
-      :Color shadowColor,
-      :ShapeBorder shape,
-    ) = value;
-
-    return PhysicalShape(
-      clipper: ShapeBorderClipper(
-        shape: shape,
-        textDirection: Directionality.maybeOf(context),
-      ),
-      clipBehavior: clipBehavior,
-      elevation: elevation,
-      color: Theme.of(context).useMaterial3
-          ? ElevationOverlay.applySurfaceTint(color, surfaceTintColor, elevation)
-          : ElevationOverlay.applyOverlay(context, color, elevation),
-      shadowColor: shadowColor,
-      child: _ShapeBorderPaint(
-        shape: shape,
-        borderOnForeground: borderOnForeground,
-        child: child!,
-      ),
-    );
-  }
-
-  @override
-  void debugFillProperties(DiagnosticPropertiesBuilder description) {
-    super.debugFillProperties(description);
-    description.add(DiagnosticsProperty<ShapeBorder>('shape', value.shape));
-    description.add(DoubleProperty('elevation', value.elevation));
-    description.add(ColorProperty('color', color));
-    description.add(ColorProperty('shadowColor', value.shadowColor));
-  }
-}
 
 class _ShapeBorderPaint extends StatelessWidget {
   const _ShapeBorderPaint({
@@ -950,11 +897,11 @@ class _ShapeBorderPaint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: borderOnForeground ? null : _ShapeBorderPainter(shape, Directionality.maybeOf(context)),
-      foregroundPainter: borderOnForeground ? _ShapeBorderPainter(shape, Directionality.maybeOf(context)) : null,
-      child: child,
-    );
+    final CustomPainter painter = _ShapeBorderPainter(shape, Directionality.maybeOf(context));
+
+    return borderOnForeground
+        ? CustomPaint(foregroundPainter: painter, child: child)
+        : CustomPaint(painter: painter, child: child);
   }
 }
 

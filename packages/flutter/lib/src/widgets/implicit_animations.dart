@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// ignore_for_file: public_member_api_docs
+
 /// @docImport 'package:flutter/material.dart';
 ///
 /// @docImport 'animated_cross_fade.dart';
@@ -12,17 +14,14 @@
 /// @docImport 'tween_animation_builder.dart';
 library;
 
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 import 'basic.dart';
 import 'container.dart';
-import 'debug.dart';
 import 'framework.dart';
 import 'sliver.dart';
 import 'text.dart';
@@ -286,8 +285,16 @@ class TextStyleTween extends Tween<TextStyle> {
 ///  * [AnimatedSize], which automatically transitions its size over a given
 ///    duration.
 ///  * [AnimatedSwitcher], which fades from one widget to another.
+@Deprecated(
+  'Use AnimatedValue instead. '
+  'The new APIs require fewer class declarations. ',
+)
 abstract class ImplicitlyAnimatedWidget extends StatefulWidget {
   /// Initializes fields for subclasses.
+  @Deprecated(
+    'Use AnimatedValue instead. '
+    'The new APIs require fewer class declarations. ',
+  )
   const ImplicitlyAnimatedWidget({
     super.key,
     this.curve = Curves.linear,
@@ -569,6 +576,8 @@ abstract class AnimatedWidgetBaseState<T extends ImplicitlyAnimatedWidget> exten
   }
 }
 
+typedef AnimationBuilder<T> = Widget Function(BuildContext context, Animation<T> animation);
+
 /// A widget that animates based on changes to its [value].
 ///
 /// This class uses a [duration], [curve], and [lerp] callback to determine
@@ -634,46 +643,51 @@ abstract class AnimatedWidgetBaseState<T extends ImplicitlyAnimatedWidget> exten
 ///  * [AnimatedSize], which automatically transitions its size over a given
 ///    duration.
 ///  * [AnimatedSwitcher], which fades from one widget to another.
-abstract class AnimatedValue<T extends Object> extends StatefulWidget {
-  /// Used by subclasses to initialize fields.
-  ///
-  /// For an animated value that doesn't need an additional class declaration,
-  /// consider [AnimatedValue.builder].
+class AnimatedValue<T extends Object> extends StatefulWidget {
   const AnimatedValue({
-    required this.value,
     super.key,
+    required this.value,
     this.initialValue,
     required this.duration,
     this.curve = Curves.linear,
     required this.lerp,
-    this.child,
     this.onEnd,
+    this.child,
   });
 
-  /// Creates an implicit animation using the provided [Duration],
-  /// [ValueWidgetBuilder], and [LerpCallback].
+  factory AnimatedValue.transition(
+    T value, {
+    Key? key,
+    T? initial,
+    required Duration duration,
+    Curve curve,
+    LerpCallback<T>? lerp,
+    VoidCallback? onEnd,
+    required AnimationBuilder<T> builder,
+  }) = _AnimatedValueTransition<T>;
+
+  /// Builds an animation using the provided [ValueWidgetBuilder].
   ///
   /// See also:
   ///
   ///  * [TweenAnimationBuilder], which does the same,
   ///    using a [Tween] rather than a [LerpCallback].
-  ///  * [Builder], the [StatelessWidget] equivalent.
-  const factory AnimatedValue.builder(
+  factory AnimatedValue.builder(
     T value, {
     Key? key,
     T? initial,
     required Duration duration,
     Curve curve,
     required ValueWidgetBuilder<T> builder,
-    required LerpCallback<T> lerp,
+    LerpCallback<T>? lerp,
     VoidCallback? onEnd,
     Widget? child,
   }) = _AnimatedValueBuilder<T>;
 
   /// The target value of the animation.
   ///
-  /// When this value changes, the widget will smoothly animate to the new value
-  /// using the provided [lerp] callback.
+  /// When this value changes, this widget's associated [ValueAnimation]
+  /// will smoothly transition to its new value.
   final T value;
 
   /// If this is non-null, the widget will immediately start animating from this
@@ -709,128 +723,213 @@ abstract class AnimatedValue<T extends Object> extends StatefulWidget {
   /// {@macro flutter.widgets.ProxyWidget.child}
   final Widget? child;
 
-  /// Called each frame to build a widget, given the current state
-  /// of the value's animation.
-  @protected
-  Widget build(BuildContext context, T value);
+  Widget build(BuildContext context, Animation<T> animation) => child!;
 
+  /// It's possible to use custom [RenderBox] and [RenderObjectWidget] classes
+  /// in place of existing Flutter widgets.
+  /// Doing so can make implementation & debugging much more difficult
+  /// but can sometimes improve the app's performance.
+  ///
+  /// Similarly, obtaining this widget's animation
+  /// (via [BuildContext.findAncestorStateOfType]) is not explicitly recommended,
+  /// but [AnimatedValueState] is public in order to make it possible.
   @override
-  State<AnimatedValue<T>> createState() => _AnimatedValueState<T>();
+  AnimatedValueState<T> createState() => AnimatedValueState<T>();
 }
 
-class _AnimatedValueState<T extends Object> extends State<AnimatedValue<T>>
-    with SingleTickerProviderStateMixin {
-  late T from = widget.initialValue ?? widget.value;
-  late T target = widget.value;
-  late T value = from;
+class AnimatedValueState<T extends Object> extends State<AnimatedValue<T>> with SingleTickerProviderStateMixin {
+  late final ValueAnimation<T> animation = ValueAnimation<T>(
+    vsync: this,
+    initialValue: widget.initialValue ?? widget.value,
+    duration: widget.duration,
+    curve: widget.curve,
+    lerp: widget.lerp,
+  );
 
-  Ticker? _ticker;
-
-  void _animate() {
-    final T newTarget = widget.value;
-    if (mounted && newTarget != value) {
-      _ticker?.stop();
-
-      if (widget.duration == Duration.zero) {
-        widget.onEnd?.call();
-        value = newTarget;
-      } else {
-        from = value;
-        target = newTarget;
-        value = widget.lerp(from, target, 0)!;
-        _ticker?.start();
-      }
+  void _statusUpdate(AnimationStatus status) {
+    if (status.isCompleted) {
+      widget.onEnd?.call();
     }
   }
 
+  @protected
   @override
   void initState() {
     super.initState();
-    _ticker = createTicker((Duration elapsed) {
-      if (value == target) {
-        widget.onEnd?.call();
-        return _ticker!.stop();
-      }
 
-      final double progress = elapsed.inMicroseconds / widget.duration.inMicroseconds;
-      if (progress >= 1.0) {
-        widget.onEnd?.call();
-        _ticker!.stop();
-        if (mounted) {
-          setState(() {
-            value = target;
-          });
-        }
-        return;
-      }
-
-      if (mounted) {
-        final double t = widget.curve.transform(math.max(progress, 0.0));
-        setState(() {
-          value = widget.lerp(from, target, t)!;
-        });
-      } else {
-        _ticker!.stop();
-      }
-    });
-    _animate();
+    if (widget.initialValue != null) {
+      animation.animateTo(widget.value);
+    }
+    animation.addStatusListener(_statusUpdate);
   }
 
+  @protected
   @override
-  void didUpdateWidget(AnimatedValue<T> oldWidget) {
+  void didUpdateWidget(covariant AnimatedValue<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _animate();
+    if (widget.value != oldWidget.value) {
+      animation.animateTo(
+        widget.value,
+        duration: widget.duration,
+        curve: widget.curve,
+      );
+    } else {
+      animation
+        ..duration = widget.duration
+        ..curve = widget.curve;
+    }
   }
 
+  @protected
   @override
   void dispose() {
-    _ticker?.dispose();
+    animation.dispose();
     super.dispose();
   }
 
+  @protected
   @override
-  Widget build(BuildContext context) => widget.build(context, value);
+  Widget build(BuildContext context) => widget.build(context, animation);
 }
 
 class _AnimatedValueBuilder<T extends Object> extends AnimatedValue<T> {
-  const _AnimatedValueBuilder(
+  _AnimatedValueBuilder(
     T value, {
     super.key,
     T? initial,
     required super.duration,
     super.curve,
-    required super.lerp,
+    LerpCallback<T>? lerp,
     super.onEnd,
     required this.builder,
     super.child,
-  }) : super(value: value, initialValue: initial);
+  }) : super(
+         value: value,
+         initialValue: initial,
+         lerp: lerp ?? ValueAnimation.lerpCallbackOfExactType<T>(),
+       );
 
-  /// {@macro flutter.widgets.ValueWidgetBuilder}
   final ValueWidgetBuilder<T> builder;
 
   @override
-  Widget build(BuildContext context, T value) => builder(context, value, child);
+  AnimatedValueState<T> createState() => _AnimatedValueBuilderState<T>();
+}
+
+class _AnimatedValueTransition<T extends Object> extends AnimatedValue<T> {
+  _AnimatedValueTransition(
+    T value, {
+    super.key,
+    T? initial,
+    required super.duration,
+    super.curve,
+    LerpCallback<T>? lerp,
+    super.onEnd,
+    required this.builder,
+  }) : super(
+         value: value,
+         initialValue: initial,
+         lerp: lerp ?? ValueAnimation.lerpCallbackOfExactType<T>(),
+       );
+
+  final AnimationBuilder<T> builder;
+
+  @override
+  Widget build(BuildContext context, Animation<T> animation) {
+    return builder(context, animation);
+  }
 }
 
 /// An implicitly animated widget whose [value] transitions between
 /// `0.0` (false) and `1.0` (true).
 ///
-/// Similar to [Builder], this class is intended to provide a convenient
-/// constructor rather than for creating subtypes.
-final class ToggleBuilder extends _AnimatedValueBuilder<double> {
-  /// Creates an implicitly animated widget whose [value]
-  /// transitions back and forth between `1.0` and `0.0`,
-  /// depending on whether `forward` is `true` or `false`.
-  const ToggleBuilder(
+/// {@tool snippet}
+/// [AnimatedToggle] is an `extension type` that wraps [AnimatedValue].
+/// For more precise control over the speed & curve of the toggling animation,
+/// consider using a [StatefulWidget] with a [ToggleAnimation] as part
+/// of its [State].
+///
+/// ```dart
+/// class MyToggle extends StatefulWidget {
+///   const MyToggle({super.key});
+///
+///   @override
+///   State<MyToggle> createState() => _MyToggleState();
+/// }
+///
+/// class _MyToggleState extends State<MyToggle> with SingleTickerProviderStateMixin {
+///   late final ToggleAnimation _toggleAnimation = ToggleAnimation(
+///     vsync: this,
+///     duration: Durations.medium1,
+///   );
+///
+///   late final CurvedAnimation animation = CurvedAnimation(
+///     parent: _toggleAnimation,
+///     curve: Curves.ease,
+///     reverseCurve: Curves.easeInOutSine,
+///   );
+///
+///   // ...
+/// }
+/// ```
+/// {@end-tool}
+extension type const AnimatedToggle(AnimatedValue<double> _widget) implements AnimatedValue<double> {
+  AnimatedToggle.builder(
     bool forward, {
-    super.key,
-    required super.duration,
-    super.curve,
-    super.onEnd,
-    required super.builder,
-    super.child,
-  }) : super(forward ? 1.0 : 0.0, lerp: _lerpDouble);
+    Key? key,
+    bool animateOnCreate = false,
+    required Duration duration,
+    Curve curve = Curves.linear,
+    required ValueWidgetBuilder<double> builder,
+    VoidCallback? onEnd,
+    Widget? child,
+  }) : _widget = AnimatedValue<double>.builder(
+         forward ? 1.0 : 0.0,
+         key: key,
+         initial : (forward != animateOnCreate) ? 1.0 : 0.0,
+         duration: duration,
+         curve: curve,
+         builder: builder,
+         onEnd: onEnd,
+         lerp: ui.lerpDouble,
+         child: child,
+       );
+
+  AnimatedToggle.transition(
+    bool forward, {
+    Key? key,
+    bool animateOnCreate = false,
+    required Duration duration,
+    Curve curve = Curves.linear,
+    required AnimationBuilder<double> builder,
+    VoidCallback? onEnd,
+  }) : _widget = AnimatedValue<double>.transition(
+         forward ? 1.0 : 0.0,
+         key: key,
+         initial : (forward != animateOnCreate) ? 1.0 : 0.0,
+         duration: duration,
+         curve: curve,
+         builder: builder,
+         onEnd: onEnd,
+         lerp: ui.lerpDouble,
+       );
 }
+
+/// Configures the [animation] to call [Element.markNeedsBuild]
+/// each time its value changes.
+class _AnimatedValueBuilderState<T extends Object> extends AnimatedValueState<T> {
+  @override
+  void initState() {
+    super.initState();
+    animation.addListener(() => setState(() {}));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueWidgetBuilder<T> builder = (widget as _AnimatedValueBuilder<T>).builder;
+    return builder(context, animation.value, widget.child);
+  }
+}
+
 
 typedef _ContainerProperties = ({
   AlignmentGeometry? alignment,
@@ -885,76 +984,35 @@ double? _lerpDouble(double? a, double? b, double t) {
 ///    position over a given duration whenever the given [AnimatedAlign.alignment] changes.
 ///  * [AnimatedSwitcher], which switches out a child for a new one with a customizable transition.
 ///  * [AnimatedCrossFade], which fades between two children and interpolates their sizes.
-class AnimatedContainer extends AnimatedValue<_ContainerProperties> {
+class AnimatedContainer extends Container {
   /// Creates a container that animates its parameters implicitly.
   AnimatedContainer({
     super.key,
-    this.alignment,
-    this.padding,
-    Color? color,
-    Decoration? decoration,
-    this.foregroundDecoration,
-    double? width,
-    double? height,
-    BoxConstraints? constraints,
-    this.margin,
-    this.transform,
-    this.transformAlignment,
-    this.clipBehavior = Clip.none,
-    super.curve,
-    required super.duration,
-    super.onEnd,
+    super.alignment,
+    super.padding,
+    super.color,
+    super.decoration,
+    super.foregroundDecoration,
+    super.width,
+    super.height,
+    super.constraints,
+    super.margin,
+    super.transform,
+    super.transformAlignment,
+    super.clipBehavior = Clip.none,
+    required this.duration,
+    this.curve = Curves.linear,
+    this.onEnd,
     super.child,
-  })  : assert(margin == null || margin.isNonNegative),
-        assert(padding == null || padding.isNonNegative),
-        assert(decoration == null || decoration.debugAssertIsValid()),
-        assert(constraints == null || constraints.debugAssertIsValid()),
-        assert(color == null || decoration == null,
-          'Cannot provide both a color and a decoration\n'
-          'The color argument is just a shorthand for "decoration: BoxDecoration(color: color)".',
-        ),
-        decoration = decoration ?? (color != null ? BoxDecoration(color: color) : null),
-        constraints =
-         (width != null || height != null)
-           ? constraints?.tighten(width: width, height: height)
-             ?? BoxConstraints.tightFor(width: width, height: height)
-           : constraints,
-        super(value: (
-          alignment: alignment,
-          padding: padding,
-          decoration: decoration ?? (color != null ? BoxDecoration(color: color) : null),
-          foregroundDecoration: foregroundDecoration,
-          constraints: (width != null || height != null)
-           ? constraints?.tighten(width: width, height: height)
-             ?? BoxConstraints.tightFor(width: width, height: height)
-           : constraints,
-          margin: margin,
-          transform: transform,
-          transformAlignment: transformAlignment,
-        ), lerp: _lerpProperties);
+  });
 
-  static Matrix4? _lerpMatrix(Matrix4? a, Matrix4? b, double t) {
-    if (a == null || b == null) {
-      return b;
-    }
-    final Vector3 beginTranslation = Vector3.zero();
-    final Vector3 endTranslation = Vector3.zero();
-    final Quaternion beginRotation = Quaternion.identity();
-    final Quaternion endRotation = Quaternion.identity();
-    final Vector3 beginScale = Vector3.zero();
-    final Vector3 endScale = Vector3.zero();
-    a.decompose(beginTranslation, beginRotation, beginScale);
-    a.decompose(endTranslation, endRotation, endScale);
-    final Vector3 lerpTranslation =
-        beginTranslation * (1.0 - t) + endTranslation * t;
-    // TODO(alangardner): Implement lerp for constant rotation
-    final Quaternion lerpRotation =
-        (beginRotation.scaled(1.0 - t) + endRotation.scaled(t)).normalized();
-    final Vector3 lerpScale = beginScale * (1.0 - t) + endScale * t;
-    return Matrix4.compose(lerpTranslation, lerpRotation, lerpScale);
-  }
+  final Duration duration;
 
-  static _ContainerProperties _lerpProperties(
+  final Curve curve;
+
+  final VoidCallback? onEnd;
+
+  static _ContainerProperties _lerp(
     _ContainerProperties a,
     _ContainerProperties b,
     double t,
@@ -966,114 +1024,51 @@ class AnimatedContainer extends AnimatedValue<_ContainerProperties> {
       foregroundDecoration: Decoration.lerp(a.foregroundDecoration, b.foregroundDecoration, t),
       constraints: BoxConstraints.lerp(a.constraints, b.constraints, t),
       margin: EdgeInsetsGeometry.lerp(a.margin, b.margin, t),
-      transform: _lerpMatrix(a.transform, b.transform, t),
+      transform: MatrixUtils.lerp(a.transform, b.transform, t),
       transformAlignment: AlignmentGeometry.lerp(a.transformAlignment, b.transformAlignment, t),
     );
   }
 
-  /// Align the [child] within the container.
-  ///
-  /// If non-null, the container will expand to fill its parent and position its
-  /// child within itself according to the given value. If the incoming
-  /// constraints are unbounded, then the child will be shrink-wrapped instead.
-  ///
-  /// Ignored if [child] is null.
-  ///
-  /// See also:
-  ///
-  ///  * [Alignment], a class with convenient constants typically used to
-  ///    specify an [AlignmentGeometry].
-  ///  * [AlignmentDirectional], like [Alignment] for specifying alignments
-  ///    relative to text direction.
-  final AlignmentGeometry? alignment;
-
-  /// Empty space to inscribe inside the [decoration]. The [child], if any, is
-  /// placed inside this padding.
-  final EdgeInsetsGeometry? padding;
-
-  /// The decoration to paint behind the [child].
-  ///
-  /// A shorthand for specifying just a solid color is available in the
-  /// constructor: set the `color` argument instead of the `decoration`
-  /// argument.
-  final Decoration? decoration;
-
-  /// The decoration to paint in front of the child.
-  final Decoration? foregroundDecoration;
-
-  /// Additional constraints to apply to the child.
-  ///
-  /// The constructor `width` and `height` arguments are combined with the
-  /// `constraints` argument to set this property.
-  ///
-  /// The [padding] goes inside the constraints.
-  final BoxConstraints? constraints;
-
-  /// Empty space to surround the [decoration] and [child].
-  final EdgeInsetsGeometry? margin;
-
-  /// The transformation matrix to apply before painting the container.
-  final Matrix4? transform;
-
-  /// The alignment of the origin, relative to the size of the container, if [transform] is specified.
-  ///
-  /// When [transform] is null, the value of this property is ignored.
-  ///
-  /// See also:
-  ///
-  ///  * [Transform.alignment], which is set by this property.
-  final AlignmentGeometry? transformAlignment;
-
-  /// The clip behavior when [AnimatedContainer.decoration] is not null.
-  ///
-  /// Defaults to [Clip.none]. Must be [Clip.none] if [decoration] is null.
-  ///
-  /// Unlike other properties of [AnimatedContainer], changes to this property
-  /// apply immediately and have no animation.
-  ///
-  /// If a clip is to be applied, the [Decoration.getClipPath] method
-  /// for the provided decoration must return a clip path. (This is not
-  /// supported by all decorations; the default implementation of that
-  /// method throws an [UnsupportedError].)
-  final Clip clipBehavior;
-
   @override
-  Widget build(BuildContext context, ({
-    AlignmentGeometry? alignment,
-    BoxConstraints? constraints,
-    Decoration? decoration,
-    Decoration? foregroundDecoration,
-    EdgeInsetsGeometry? margin,
-    EdgeInsetsGeometry? padding,
-    Matrix4? transform,
-    AlignmentGeometry? transformAlignment
-  }) value) {
-    return Container(
-      alignment: value.alignment,
-      padding: value.padding,
-      decoration: value.decoration,
-      foregroundDecoration: value.foregroundDecoration,
-      constraints: value.constraints,
-      margin: value.margin,
-      transform: value.transform,
-      transformAlignment: value.transformAlignment,
-      clipBehavior: clipBehavior,
-      child: child,
+  Widget build(BuildContext context) {
+    return AnimatedValue<_ContainerProperties>.builder(
+      (
+        alignment: alignment,
+        constraints: constraints,
+        decoration: decoration,
+        foregroundDecoration: foregroundDecoration,
+        margin: margin,
+        padding: padding,
+        transform: transform,
+        transformAlignment: transformAlignment,
+      ),
+      duration: duration,
+      curve: curve,
+      onEnd: onEnd,
+      lerp: _lerp,
+      builder: (BuildContext context, _ContainerProperties value, Widget? child) {
+        return Container(
+          alignment: value.alignment,
+          padding: value.padding,
+          decoration: value.decoration,
+          foregroundDecoration: value.foregroundDecoration,
+          constraints: value.constraints,
+          margin: value.margin,
+          transform: value.transform,
+          transformAlignment: value.transformAlignment,
+          clipBehavior: clipBehavior,
+          child: child,
+        );
+      },
     );
   }
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(DiagnosticsProperty<AlignmentGeometry>('alignment', alignment, showName: false, defaultValue: null));
-    properties.add(DiagnosticsProperty<EdgeInsetsGeometry>('padding', padding, defaultValue: null));
-    properties.add(DiagnosticsProperty<Decoration>('bg', decoration, defaultValue: null));
-    properties.add(DiagnosticsProperty<Decoration>('fg', foregroundDecoration, defaultValue: null));
-    properties.add(DiagnosticsProperty<BoxConstraints>('constraints', constraints, defaultValue: null, showName: false));
-    properties.add(DiagnosticsProperty<EdgeInsetsGeometry>('margin', margin, defaultValue: null));
-    properties.add(ObjectFlagProperty<Matrix4>.has('transform', transform));
-    properties.add(DiagnosticsProperty<AlignmentGeometry>('transformAlignment', transformAlignment, defaultValue: null));
-    properties.add(DiagnosticsProperty<Clip>('clipBehavior', clipBehavior));
+    properties.add(DiagnosticsProperty<Duration>('duration', duration));
+    properties.add(DiagnosticsProperty<Curve>('curve', curve, defaultValue: Curves.linear));
+    properties.add(DiagnosticsProperty<VoidCallback>('onEnd', onEnd, defaultValue: null));
   }
 }
 
@@ -1117,17 +1112,48 @@ class AnimatedPadding extends AnimatedValue<EdgeInsetsGeometry> {
   final EdgeInsetsGeometry padding;
 
   @override
-  Widget build(BuildContext context, EdgeInsetsGeometry value) {
-    return Padding(
-      padding: value.clamp(EdgeInsets.zero, EdgeInsetsGeometry.infinity),
-      child: child,
-    );
+  Widget build(BuildContext context, Animation<EdgeInsetsGeometry> animation) {
+    return PaddingTransition(padding: animation, child: child);
   }
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
     properties.add(DiagnosticsProperty<EdgeInsetsGeometry>('padding', padding));
+  }
+}
+
+class PaddingTransition extends SingleChildRenderObjectWidget with RenderListenable {
+  /// Creates a widget that insets its child.
+  const PaddingTransition({
+    super.key,
+    required ValueListenable<EdgeInsetsGeometry> padding,
+    super.child,
+  }) : listenable = padding;
+
+  /// The amount of space by which to inset the child.
+  @override
+  final ValueListenable<EdgeInsetsGeometry> listenable;
+
+  @override
+  RenderPadding createRenderObject(BuildContext context) {
+    return RenderPadding(
+      padding: listenable.value,
+      textDirection: Directionality.maybeOf(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderPadding renderObject) {
+    renderObject
+      ..padding = listenable.value
+      ..textDirection = Directionality.maybeOf(context);
+  }
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(DiagnosticsProperty<ValueListenable<EdgeInsetsGeometry>>('padding', listenable));
   }
 }
 
@@ -1232,17 +1258,11 @@ class AnimatedAlign extends AnimatedValue<_AlignProperties> {
   final double? widthFactor;
 
   @override
-  Widget build(BuildContext context, ({
-    AlignmentGeometry alignment,
-    double? heightFactor,
-    double? widthFactor,
-  }) value) {
-    return Align(
-      alignment: value.alignment,
-      heightFactor: value.heightFactor,
-      widthFactor: value.widthFactor,
-      child: child,
-    );
+  Widget build(
+    BuildContext context,
+    Animation<({AlignmentGeometry alignment, double? heightFactor, double? widthFactor})> animation,
+  ) {
+    return _AlignTransition(listenable: animation, child: child);
   }
 
   @override
@@ -1250,6 +1270,45 @@ class AnimatedAlign extends AnimatedValue<_AlignProperties> {
     super.debugFillProperties(properties);
     properties.add(DiagnosticsProperty<AlignmentGeometry>('alignment', alignment));
   }
+}
+
+class _AlignTransition extends SingleChildRenderObjectWidget with RenderListenable {
+  const _AlignTransition({required this.listenable, super.child});
+
+  @override
+  final ValueListenable<_AlignProperties> listenable;
+
+  @override
+  RenderPositionedBox createRenderObject(BuildContext context) {
+    final (
+      :AlignmentGeometry alignment,
+      :double? widthFactor,
+      :double? heightFactor,
+    ) = listenable.value;
+
+    return RenderPositionedBox(
+      alignment: alignment,
+      widthFactor: widthFactor,
+      heightFactor: heightFactor,
+      textDirection: Directionality.maybeOf(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderPositionedBox renderObject) {
+    final (
+      :AlignmentGeometry alignment,
+      :double? widthFactor,
+      :double? heightFactor,
+    ) = listenable.value;
+
+    renderObject
+      ..alignment = alignment
+      ..widthFactor = widthFactor
+      ..heightFactor = heightFactor
+      ..textDirection = Directionality.maybeOf(context);
+  }
+
 }
 
 typedef _PositionedProperties = ({
@@ -1319,7 +1378,7 @@ class AnimatedPositioned extends AnimatedValue<_PositionedProperties> {
        assert(top == null || bottom == null || height == null),
        super(
          value: (padding: (left, top, right, bottom), size: (width, height)),
-         lerp: _lerpProperties,
+         lerp: _lerp,
        );
 
   /// Creates a widget that animates the rectangle it occupies implicitly.
@@ -1338,10 +1397,10 @@ class AnimatedPositioned extends AnimatedValue<_PositionedProperties> {
        bottom = null,
        super(
          value: (padding: (rect.left, rect.top, null, null), size: (rect.width, rect.height)),
-         lerp: _lerpProperties,
+         lerp: _lerp,
        );
 
-  static _PositionedProperties _lerpProperties(
+  static _PositionedProperties _lerp(
     _PositionedProperties a,
     _PositionedProperties b,
     double t,
@@ -1385,18 +1444,23 @@ class AnimatedPositioned extends AnimatedValue<_PositionedProperties> {
   final double? height;
 
   @override
-  Widget build(BuildContext context, ({
+  Widget build(BuildContext context, Animation<({
     (double?, double?, double?, double?) padding,
     (double?, double?) size,
-  }) value) {
-    return Positioned(
-      left: value.padding.$1,
-      top: value.padding.$2,
-      right: value.padding.$3,
-      bottom: value.padding.$4,
-      width: value.size.$1,
-      height: value.size.$2,
-      child: child!,
+  })> animation) {
+    return ValueListenableBuilder<_PositionedProperties>(
+      valueListenable: animation,
+      builder: (BuildContext context, _PositionedProperties value, Widget? child) {
+        return Positioned(
+          left: value.padding.$1,
+          top: value.padding.$2,
+          right: value.padding.$3,
+          bottom: value.padding.$4,
+          width: value.size.$1,
+          height: value.size.$2,
+          child: child!,
+        );
+      }
     );
   }
 
@@ -1458,7 +1522,7 @@ class AnimatedPositionedDirectional extends AnimatedValue<_PositionedProperties>
        assert(top == null || bottom == null || height == null),
        super(
          value: (padding: (start, top, end, bottom), size: (width, height)),
-         lerp: AnimatedPositioned._lerpProperties,
+         lerp: AnimatedPositioned._lerp,
        );
 
   /// The offset of the child's start edge from the start of the stack.
@@ -1486,20 +1550,24 @@ class AnimatedPositionedDirectional extends AnimatedValue<_PositionedProperties>
   final double? height;
 
   @override
-  Widget build(BuildContext context, ({
+  Widget build(BuildContext context, Animation<({
     (double?, double?, double?, double?) padding,
     (double?, double?) size,
-  }) value) {
-    assert(debugCheckHasDirectionality(context));
-    return Positioned.directional(
-      textDirection: Directionality.of(context),
-      start: value.padding.$1,
-      top: value.padding.$2,
-      end: value.padding.$3,
-      bottom: value.padding.$4,
-      width: value.size.$1,
-      height: value.size.$2,
-      child: child!,
+  })> animation) {
+    return ValueListenableBuilder<_PositionedProperties>(
+      valueListenable: animation,
+      builder: (BuildContext context, _PositionedProperties value, Widget? child) {
+        return Positioned.directional(
+          textDirection: Directionality.of(context),
+          start: value.padding.$1,
+          top: value.padding.$2,
+          end: value.padding.$3,
+          bottom: value.padding.$4,
+          width: value.size.$1,
+          height: value.size.$2,
+          child: child!,
+        );
+      }
     );
   }
 
@@ -1574,7 +1642,7 @@ class AnimatedScale extends AnimatedValue<double> {
   /// Creates a widget that animates its scale implicitly.
   const AnimatedScale({
     super.key,
-    required this.scale,
+    required double scale,
     double? initialScale,
     this.alignment = Alignment.center,
     this.filterQuality,
@@ -1583,9 +1651,6 @@ class AnimatedScale extends AnimatedValue<double> {
     super.onEnd,
     super.child,
   }) : super(value: scale, initialValue: initialScale, lerp: ui.lerpDouble);
-
-  /// The target scale.
-  final double scale;
 
   /// The alignment of the origin of the coordinate system in which the scale
   /// takes place, relative to the size of the box.
@@ -1600,9 +1665,9 @@ class AnimatedScale extends AnimatedValue<double> {
   final FilterQuality? filterQuality;
 
   @override
-  Widget build(BuildContext context, double value) {
-    return Transform.scale(
-      scale: value,
+  Widget build(BuildContext context, Animation<double> animation) {
+    return ScaleTransition(
+      scale: animation,
       alignment: alignment,
       filterQuality: filterQuality,
       child: child,
@@ -1612,7 +1677,7 @@ class AnimatedScale extends AnimatedValue<double> {
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
     super.debugFillProperties(properties);
-    properties.add(DoubleProperty('scale', scale));
+    properties.add(DoubleProperty('scale', value));
     properties.add(DiagnosticsProperty<Alignment>('alignment', alignment, defaultValue: Alignment.center));
     properties.add(EnumProperty<FilterQuality>('filterQuality', filterQuality, defaultValue: null));
   }
@@ -1703,9 +1768,9 @@ class AnimatedRotation extends AnimatedValue<double> {
   final FilterQuality? filterQuality;
 
   @override
-  Widget build(BuildContext context, double value) {
-    return Transform.rotate(
-      angle: value * 2 * math.pi,
+  Widget build(BuildContext context, Animation<double> animation) {
+    return RotationTransition(
+      turns: animation,
       alignment: alignment,
       filterQuality: filterQuality,
       child: child,
@@ -1759,11 +1824,8 @@ class AnimatedSlide extends AnimatedValue<Offset> {
   final Offset offset;
 
   @override
-  Widget build(BuildContext context, Offset value) {
-    return FractionalTranslation(
-      translation: value,
-      child: child,
-    );
+  Widget build(BuildContext context, Animation<Offset> animation) {
+    return SlideTransition(position: animation, child: child);
   }
 
   @override
@@ -1888,9 +1950,9 @@ class AnimatedOpacity extends AnimatedValue<double> {
   }
 
   @override
-  Widget build(BuildContext context, double value) {
-    return Opacity(
-      opacity: value,
+  Widget build(BuildContext context, Animation<double> animation) {
+    return FadeTransition(
+      opacity: animation,
       alwaysIncludeSemantics: alwaysIncludeSemantics,
       child: child,
     );
@@ -1953,7 +2015,12 @@ class SliverAnimatedOpacity extends AnimatedValue<double> {
     super.onEnd,
     this.alwaysIncludeSemantics = false,
   }) : assert(opacity >= 0.0 && opacity <= 1.0),
-       super(value: opacity, initialValue: initialOpacity, lerp: ui.lerpDouble, child: sliver);
+       super(
+         value: opacity,
+         initialValue: initialOpacity,
+         lerp: ui.lerpDouble,
+         child: sliver,
+       );
 
   /// The sliver below this widget in the tree.
   final Widget? sliver;
@@ -1975,9 +2042,9 @@ class SliverAnimatedOpacity extends AnimatedValue<double> {
   final bool alwaysIncludeSemantics;
 
   @override
-  Widget build(BuildContext context, double value) {
-    return SliverOpacity(
-      opacity: value,
+  Widget build(BuildContext context, Animation<double> animation) {
+    return SliverFadeTransition(
+      opacity: animation,
       sliver: sliver,
       alwaysIncludeSemantics: alwaysIncludeSemantics,
     );
@@ -2066,16 +2133,21 @@ class AnimatedDefaultTextStyle extends AnimatedValue<TextStyle> {
   final ui.TextHeightBehavior? textHeightBehavior;
 
   @override
-  Widget build(BuildContext context, TextStyle value) {
-    return DefaultTextStyle(
-      style: value,
-      textAlign: textAlign,
-      softWrap: softWrap,
-      overflow: overflow,
-      maxLines: maxLines,
-      textWidthBasis: textWidthBasis,
-      textHeightBehavior: textHeightBehavior,
-      child: child!,
+  Widget build(BuildContext context, Animation<TextStyle> animation) {
+    return ValueListenableBuilder<TextStyle>(
+      valueListenable: animation,
+      builder: (BuildContext context, TextStyle style, Widget? child) {
+        return DefaultTextStyle(
+          style: style,
+          textAlign: textAlign,
+          softWrap: softWrap,
+          overflow: overflow,
+          maxLines: maxLines,
+          textWidthBasis: textWidthBasis,
+          textHeightBehavior: textHeightBehavior,
+          child: this.child!,
+        );
+      }
     );
   }
 
@@ -2188,19 +2260,18 @@ class AnimatedPhysicalModel extends AnimatedValue<_PhysicalModelProperties> {
   final bool animateShadowColor;
 
   @override
-  Widget build(BuildContext context, ({
+  Widget build(BuildContext context, Animation<({
     BorderRadius? borderRadius,
     double elevation,
     Color color,
     Color shadowColor,
-  }) value) {
-    return PhysicalModel(
+  })> animation) {
+    return _PhysicalModelTransition(
+      listenable: animation,
       shape: shape,
       clipBehavior: clipBehavior,
-      borderRadius: value.borderRadius,
-      elevation: value.elevation,
-      color: animateColor ? value.color : color,
-      shadowColor: animateShadowColor ? value.shadowColor : shadowColor,
+      color: animateColor ? null : color,
+      shadowColor: animateShadowColor ? null : shadowColor,
       child: child,
     );
   }
@@ -2216,6 +2287,25 @@ class AnimatedPhysicalModel extends AnimatedValue<_PhysicalModelProperties> {
     properties.add(ColorProperty('shadowColor', shadowColor));
     properties.add(DiagnosticsProperty<bool>('animateShadowColor', animateShadowColor));
   }
+}
+
+class _PhysicalModelTransition extends PhysicalModel with RenderListenable {
+  _PhysicalModelTransition({
+    required super.shape,
+    required super.clipBehavior,
+    required Color? color,
+    required Color? shadowColor,
+    required this.listenable,
+    required super.child,
+  })  : super(
+          borderRadius: listenable.value.borderRadius,
+          elevation: listenable.value.elevation,
+          color: color ?? listenable.value.color,
+          shadowColor: shadowColor ?? listenable.value.shadowColor,
+        );
+
+  @override
+  final ValueListenable<_PhysicalModelProperties> listenable;
 }
 
 typedef _FractionallySizedBoxProperties = ({
@@ -2294,17 +2384,11 @@ class AnimatedFractionallySizedBox extends AnimatedValue<_FractionallySizedBoxPr
   final AlignmentGeometry alignment;
 
   @override
-  Widget build(BuildContext context, ({
-    AlignmentGeometry alignment,
-    double? height,
-    double? width,
-  }) value) {
-    return FractionallySizedBox(
-      alignment: value.alignment,
-      heightFactor: value.height,
-      widthFactor: value.width,
-      child: child,
-    );
+  Widget build(
+    BuildContext context,
+    Animation<({AlignmentGeometry alignment, double? height, double? width})> animation,
+  ) {
+    return _FractionallySizedBoxTransition(listenable: animation, child: child);
   }
 
   @override
@@ -2313,5 +2397,43 @@ class AnimatedFractionallySizedBox extends AnimatedValue<_FractionallySizedBoxPr
     properties.add(DiagnosticsProperty<AlignmentGeometry>('alignment', alignment));
     properties.add(DiagnosticsProperty<double>('widthFactor', widthFactor));
     properties.add(DiagnosticsProperty<double>('heightFactor', heightFactor));
+  }
+}
+
+class _FractionallySizedBoxTransition extends SingleChildRenderObjectWidget with RenderListenable {
+  _FractionallySizedBoxTransition({required this.listenable, super.child});
+
+  @override
+  final ValueListenable<_FractionallySizedBoxProperties> listenable;
+
+  @override
+  RenderFractionallySizedOverflowBox createRenderObject(BuildContext context) {
+    final (
+      :AlignmentGeometry alignment,
+      :double? width,
+      :double? height,
+    ) = listenable.value;
+
+    return RenderFractionallySizedOverflowBox(
+      alignment: alignment,
+      widthFactor: width,
+      heightFactor: height,
+      textDirection: Directionality.maybeOf(context),
+    );
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, RenderFractionallySizedOverflowBox renderObject) {
+    final (
+      :AlignmentGeometry alignment,
+      :double? width,
+      :double? height,
+    ) = listenable.value;
+
+    renderObject
+      ..alignment = alignment
+      ..widthFactor = width
+      ..heightFactor = height
+      ..textDirection = Directionality.maybeOf(context);
   }
 }

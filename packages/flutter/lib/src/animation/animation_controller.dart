@@ -11,8 +11,8 @@ import 'dart:ui' as ui show lerpDouble;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/semantics.dart';
 
 import 'animation.dart';
 import 'curves.dart';
@@ -1046,8 +1046,12 @@ typedef LerpCallback<T> = T? Function(T a, T b, double t);
 /// over the specified [duration] to create a continuous visual transition.
 ///
 /// This class is similar to `AnimatedValue`: [AnimatedValue] is a [StatefulWidget]
-/// whereas [ValueAnimation] is an [Animation]
-class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, ValueAnimation<T>> {
+/// whereas [ValueAnimation] is an [Animation].
+///
+/// Unlike [Transition] and [AnimatedValue], a `ValueAnimation`
+/// can animate to and from `null`, if [T] is configured as nullable and
+/// the appropriate [lerp] callback is provided.
+class ValueAnimation<T> extends _AnimationControllerBase<T, ValueAnimation<T>> {
   /// Creates a [ValueListenable] that smoothly animates between values.
   ///
   /// {@macro flutter.animation.ValueAnimation.value_setter}
@@ -1056,11 +1060,12 @@ class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, Value
     required T initialValue,
     required this.duration,
     this.curve = Curves.linear,
-    required this.lerp,
+    LerpCallback<T>? lerp,
     super.animationBehavior,
   }) : _from = initialValue,
        _target = initialValue,
-       _value = initialValue;
+       _value = initialValue,
+       lerp = lerp ?? lerpCallbackOfExactType<T>();
 
   /// The length of time this animation should last.
   ///
@@ -1097,6 +1102,55 @@ class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, Value
   /// {@end-tool}
   final LerpCallback<T> lerp;
 
+  // ignore: public_member_api_docs
+  static LerpCallback<T> lerpCallbackOfExactType<T>() => switch (T) {
+    const (Offset)                  => Offset.lerp,
+    const (Size)                    => Size.lerp,
+    const (Rect)                    => Rect.lerp,
+    const (Radius)                  => Radius.lerp,
+    const (RRect)                   => RRect.lerp,
+    const (Color)                   => Color.lerp,
+    const (Shadow)                  => Shadow.lerp,
+    const (List<Shadow>)            => Shadow.lerpList,
+    const (FontWeight)              => FontWeight.lerp,
+    const (FontVariation)           => FontVariation.lerp,
+    const (AlignmentGeometry)       => AlignmentGeometry.lerp,
+    const (Alignment)               => Alignment.lerp,
+    const (AlignmentDirectional)    => AlignmentDirectional.lerp,
+    const (BorderRadiusGeometry)    => BorderRadiusGeometry.lerp,
+    const (BorderRadius)            => BorderRadius.lerp,
+    const (BorderRadiusDirectional) => BorderRadiusDirectional.lerp,
+    const (BorderSide)              => BorderSide.lerp,
+    const (ShapeBorder)             => ShapeBorder.lerp,
+    const (OutlinedBorder)          => OutlinedBorder.lerp,
+    const (BoxBorder)               => BoxBorder.lerp,
+    const (Border)                  => Border.lerp,
+    const (BorderDirectional)       => BorderDirectional.lerp,
+    const (BoxDecoration)           => BoxDecoration.lerp,
+    const (BoxShadow)               => BoxShadow.lerp,
+    const (List<BoxShadow>)         => BoxShadow.lerpList,
+    const (HSVColor)                => HSVColor.lerp,
+    const (HSLColor)                => HSLColor.lerp,
+    const (ColorSwatch)             => ColorSwatch.lerp,
+    const (DecorationImage)         => DecorationImage.lerp,
+    const (Decoration)              => Decoration.lerp,
+    const (EdgeInsetsGeometry)      => EdgeInsetsGeometry.lerp,
+    const (EdgeInsets)              => EdgeInsets.lerp,
+    const (EdgeInsetsDirectional)   => EdgeInsetsDirectional.lerp,
+    const (FractionalOffset)        => FractionalOffset.lerp,
+    const (Gradient)                => Gradient.lerp,
+    const (LinearGradient)          => LinearGradient.lerp,
+    const (RadialGradient)          => RadialGradient.lerp,
+    const (SweepGradient)           => SweepGradient.lerp,
+    const (LinearBorderEdge)        => LinearBorderEdge.lerp,
+    const (ShapeDecoration)         => ShapeDecoration.lerp,
+    const (TextStyle)               => TextStyle.lerp,
+    const (BoxConstraints)          => BoxConstraints.lerp,
+    const (RelativeRect)            => RelativeRect.lerp,
+    const (TableBorder)             => TableBorder.lerp,
+    _ => throw Error(),
+  } as LerpCallback<T>;
+
   T _from;
   T _target;
   T _value;
@@ -1109,6 +1163,9 @@ class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, Value
   /// each time a new target is set, using the provided [duration], [curve],
   /// and [lerp] callback.
   /// {@endtemplate}
+  ///
+  /// To create an immediate change to the value, consider calling [animateTo]
+  /// with a non-null `from` parameter, or calling [jumpTo].
   set value(T newTarget) {
     animateTo(newTarget);
   }
@@ -1155,7 +1212,7 @@ class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, Value
 
     _from = from ?? value;
     _target = target;
-    _value = lerp(_from, _target, 0)!;
+    _value = lerp(_from, _target, 0) as T;
     _statusUpdate(AnimationStatus.forward);
     return _ticker!.start();
   }
@@ -1177,7 +1234,7 @@ class ValueAnimation<T extends Object> extends _AnimationControllerBase<T, Value
       _ticker!.stop();
     } else {
       final double t = curve.transform(math.max(progress, 0.0));
-      _value = lerp(_from, _target, t)!;
+      _value = lerp(_from, _target, t) as T;
     }
     notifyListeners();
   }
